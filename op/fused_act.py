@@ -6,15 +6,15 @@ from torch.nn import functional as F
 from torch.autograd import Function
 from torch.utils.cpp_extension import load
 
-
-module_path = os.path.dirname(__file__)
-fused = load(
-    "fused",
-    sources=[
-        os.path.join(module_path, "fused_bias_act.cpp"),
-        os.path.join(module_path, "fused_bias_act_kernel.cu"),
-    ],
-)
+if torch.cuda.is_available():
+    module_path = os.path.dirname(__file__)
+    fused = load(
+        "fused",
+        sources=[
+            os.path.join(module_path, "fused_bias_act.cpp"),
+            os.path.join(module_path, "fused_bias_act_kernel.cu"),
+        ],
+    )
 
 
 class FusedLeakyReLUFunctionBackward(Function):
@@ -27,7 +27,7 @@ class FusedLeakyReLUFunctionBackward(Function):
         empty = grad_output.new_empty(0)
 
         grad_input = fused.fused_bias_act(
-            grad_output.contiguous(), empty, out, 3, 1, negative_slope, scale
+            grad_output, empty, out, 3, 1, negative_slope, scale
         )
 
         dim = [0]
@@ -102,7 +102,7 @@ class FusedLeakyReLU(nn.Module):
 
 
 def fused_leaky_relu(input, bias=None, negative_slope=0.2, scale=2 ** 0.5):
-    if input.device.type == "cpu":
+    if input.device.type == "cpu" or input.device.type == "xla":
         if bias is not None:
             rest_dim = [1] * (input.ndim - bias.ndim - 1)
             return (
